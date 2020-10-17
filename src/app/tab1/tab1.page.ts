@@ -1,6 +1,10 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectorRef } from '@angular/core';
 import { QRScanner, QRScannerStatus } from '@ionic-native/qr-scanner/ngx';
 import { AlertController, Platform } from '@ionic/angular';
+import { ScreenOrientation } from '@ionic-native/screen-orientation/ngx';
+
+import { HistoricoService } from '../servicos/historico.service';
+import { Historico } from '../models/historico';
 
 @Component({
   selector: 'app-tab1',
@@ -12,28 +16,39 @@ export class Tab1Page {
   public leitorQRCode: any;
 
   public content: HTMLElement;
-
   public imgLogo: HTMLElement;
+  public footer: HTMLElement;
 
   public leitura: string;
+
+  public link = false;
+
 
   constructor(
     private qrScanner: QRScanner,
     public alertController: AlertController,
-    public platform: Platform) {
+    public platform: Platform,
+    private screenOrientation: ScreenOrientation,
+    private cdRef: ChangeDetectorRef,
+    private historicoService: HistoricoService) {
+
+
+    this.screenOrientation.lock(this.screenOrientation.ORIENTATIONS.PORTRAIT);
 
     this.platform.backButton.subscribeWithPriority(0, () => {
       this.content.style.opacity = '1';
       this.imgLogo.style.opacity = '1';
+      this.footer.style.opacity = '1';
 
       this.leitura = null;
+      this.link = false;
 
-      this.qrScanner.hide(); 
-      this.leitorQRCode.unsubscribe(); 
+      this.qrScanner.hide();
+      this.leitorQRCode.unsubscribe();
     });
   }
 
-  public lerQRCode() {
+  public async lerQRCode() {
 
     // Optionally request the permission early
     this.qrScanner.prepare()
@@ -43,24 +58,40 @@ export class Tab1Page {
 
           this.content = document.getElementsByTagName('ion-content')[0] as HTMLElement;
           this.imgLogo = document.getElementById('qrc') as HTMLElement;
+          this.footer = document.getElementById('footer') as HTMLElement;
 
           this.content.style.opacity = '0';
           this.imgLogo.style.opacity = '0';
+          this.footer.style.opacity = '0';
 
           this.qrScanner.show();
 
           // start scanning
-          this.leitorQRCode = this.qrScanner.scan().subscribe((text: string) => {
+          this.leitorQRCode = this.qrScanner.scan().subscribe(async (text: string) => {
 
             this.leitura = (text['result']) ? text['result'] : text;
 
             this.content.style.opacity = '1';
             this.imgLogo.style.opacity = '1';
+            this.footer.style.opacity = '1';
 
             this.qrScanner.hide(); // hide camera preview
             this.leitorQRCode.unsubscribe(); // stop scanning
 
-            this.presentAlert('LEITURA:', this.leitura);
+            // this.presentAlert('LEITURA:', this.leitura);
+            this.verficaLink(this.leitura);
+            this.cdRef.detectChanges();
+
+            const historico = new Historico();
+            historico.leitura = this.leitura;
+            historico.dataHora = new Date();
+
+            await this.historicoService.create(historico).then(resposta => {
+              console.log(resposta);
+            }).catch(erro => {
+              this.presentAlert('ERRO!', 'Erro ao salvar no Firebase.');
+              console.log('ERRO: ', erro);
+            });
           });
 
         } else if (status.denied) {
@@ -82,5 +113,16 @@ export class Tab1Page {
     });
 
     await alert.present();
+  }
+
+  public verficaLink(texto: string) {
+
+    const inicio = texto.substring(0, 4);
+
+    if (inicio == 'www.' || inicio == 'http') {
+      this.link = true;
+    } else {
+      this.link = false;
+    }
   }
 }
